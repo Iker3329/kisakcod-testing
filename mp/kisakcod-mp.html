@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0;url=../index.html?mode=mp">
+<title>Redirecting to unified multiplayer…</title>
+<script>
+  // Preserve any existing query parameters (joinCode, bots, etc.)
+  const params = new URLSearchParams(location.search);
+  params.set("mode", "mp");
+  location.replace("../index.html?" + params.toString());
+</script>
+</head>
+<body style="background:#000;color:#aaa;font-family:sans-serif;text-align:center;padding:4em">
+  <p>Redirecting to the unified launcher…</p>
+  <p><a href="../index.html?mode=mp" style="color:#6ec26e">Click here if you are not redirected</a></p>
+</body>
+</html>
