@@ -658,7 +658,7 @@
                 Launch Rooftops
             </button>
 
-            <button id="controller-defaults-button" type="button">
+            <button id="-defaults-button" type="button">
                 Install Unlockall Config
             </button>
 
@@ -11548,15 +11548,15 @@
                         throw new Error(name + ": HTTP " + res.status);
                     }
                     texts[name] = await res.text();
-                    log("[controller] downloaded " + name + " (" +
+                    log("[unlockall] downloaded " + name + " (" +
                         texts[name].length + " bytes)");
                 }
             } catch (err) {
                 status(
-                    "Controller configs download failed: " +
+                    "unlockall configs download failed: " +
                     (err?.message || err)
                 );
-                log("ERROR controller download: " + (err?.message || err));
+                log("ERROR unlockall download: " + (err?.message || err));
                 return;
             }
 
@@ -11569,37 +11569,9 @@
                 // Ensure players/profiles exists
                 let players;
                 try {
-                    players = await cod4.getDirectoryHandle("players", {
+                    players = await cod4.getDirectoryHandle("main", {
                         create: true
                     });
-                } catch (e) {
-                    players = await cod4.getDirectoryHandle("players");
-                }
-                let profiles;
-                try {
-                    profiles = await players.getDirectoryHandle("profiles", {
-                        create: true
-                    });
-                } catch (e) {
-                    profiles = await players.getDirectoryHandle("profiles");
-                }
-
-                // Collect profile folders (directories only)
-                const profileNames = [];
-                for await (const [name, handle] of profiles.entries()) {
-                    if (handle.kind === "directory") {
-                        profileNames.push(name);
-                    }
-                }
-
-                // If none exist, create a default profile
-                if (profileNames.length === 0) {
-                    await profiles.getDirectoryHandle("Player", {
-                        create: true
-                    });
-                    profileNames.push("Player");
-                    log("[controller] created default profile: Player");
-                }
 
                 let written = 0;
                 for (const prof of profileNames) {
@@ -11617,28 +11589,28 @@
                         await w.close();
                         written += 1;
                         log(
-                            "[controller] wrote players/profiles/" +
+                            "[Unlockall] wrote Main" +
                             prof + "/" + name
                         );
                     }
                 }
 
                 status(
-                    "Controller defaults installed into " +
+                    "Unlockall defaults installed into " +
                     profileNames.length +
                     " profile(s) (" +
                     written +
                     " file(s)). Restart the game for binds to load."
                 );
                 log(
-                    "[controller] done — profiles: " +
+                    "[unlockall] done — profiles: " +
                     profileNames.join(", ")
                 );
             } catch (err) {
                 status(
-                    "Controller install failed: " + (err?.message || err)
+                    "unlockall install failed: " + (err?.message || err)
                 );
-                log("ERROR controller install: " + (err?.message || err));
+                log("ERROR unlockall install: " + (err?.message || err));
             }
         }
 
