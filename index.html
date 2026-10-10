@@ -659,19 +659,7 @@
             </button>
 
             <button id="controller-defaults-button" type="button">
-                Controller default controls
-            </button>
-
-            <button id="install-mpdata-button" type="button">
-                Install unlock stats (mpdata)
-            </button>
-
-            <button id="install-unlockall-mod-button" type="button">
-                Install unlock-all mod
-            </button>
-
-            <button id="launch-unlockall-mp-button" type="button">
-                Launch unlock-all MP
+                Install Unlockall Config
             </button>
 
             <button id="reset-mods-button" type="button" class="danger">
@@ -11541,15 +11529,15 @@
         async function installControllerDefaultControls() {
             const BASE =
                 "https://raw.githubusercontent.com/Iker3329/kisakcod/main/assets/";
-            const FILES = ["config.cfg", "config_mp.cfg"];
+            const FILES = ["unlockall.cfg"];
 
             if (!await hasInstalledGame()) {
                 status("Install the game first.");
                 return;
             }
 
-            status("Downloading controller default configs…");
-            log("[controller] fetching configs from " + BASE);
+            status("installing unlockall config");
+            log("Fetching config from" + BASE);
 
             let texts = {};
             try {
