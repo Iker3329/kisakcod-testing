@@ -13954,13 +13954,30 @@
                         code = code.replace(needle, inject);
                     }
                     try {
-                        if (!Module.kisakLanUrl) {
-                            Module.kisakLanUrl = "wss://mw.slqnt.dev/lan?v=1";
-                        }
+                        const OFFICIAL = "wss://mw.slqnt.dev/lan?v=1";
+                        let relay = OFFICIAL;
+                        try {
+                            if (typeof Module !== "undefined" && Module &&
+                                Module.kisakLanUrl) {
+                                relay = Module.kisakLanUrl;
+                            }
+                        } catch (e) { }
+                        try {
+                            if (typeof Module !== "undefined" && Module) {
+                                Module.kisakLanUrl = relay;
+                            }
+                        } catch (e) { }
+                        // Glue may run before Module is bound in this scope —
+                        // create/assign safely on window.
                         code =
-                            "Module.kisakLanUrl=" +
-                            JSON.stringify(Module.kisakLanUrl) +
-                            ";console.log('[kisak] glue relay',Module.kisakLanUrl);" +
+                            "(function(){try{" +
+                            "var M=(typeof Module!=='undefined'&&Module)" +
+                            "?(Module):(window.Module=window.Module||{});" +
+                            "M.kisakLanUrl=" + JSON.stringify(relay) + ";" +
+                            "if(typeof Module==='undefined'||!Module)" +
+                            "{window.Module=M;}" +
+                            "console.log('[kisak] glue relay',M.kisakLanUrl);" +
+                            "}catch(e){console.warn('[kisak] relay bake',e);}})();" +
                             code;
                     } catch (e) {
                         console.warn("[kisak] relay bake failed", e);
