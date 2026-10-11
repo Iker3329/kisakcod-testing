@@ -13928,6 +13928,7 @@
                 }
 
                 if (code && code.indexOf("function kisak_launch_args") >= 0) {
+                    // 1) Force kisak_launch_args
                     const forceFn =
                         "function kisak_launch_args(){" +
                         "try{" +
@@ -13944,7 +13945,6 @@
                         "}catch(err){console.error('[kisak] launch_args error',err);return 0;}" +
                         "}";
 
-                    // Replace the whole function declaration up to kisak_bench_text
                     const re = /function kisak_launch_args\(\)\{[\s\S]*?\}function kisak_bench_text/;
                     if (re.test(code)) {
                         code = code.replace(
@@ -13959,6 +13959,35 @@
                             "[kisak] kisak_launch_args pattern not found in glue"
                         );
                     }
+
+                    // 2) After programArgs is assigned from Module.arguments, force fs_game
+                    const needle = "Module.arguments&&(programArgs=Module.arguments)";
+                    if (code.indexOf(needle) >= 0) {
+                        const inject =
+                            needle +
+                            ",(function(){try{" +
+                            "var f=null;" +
+                            "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
+                            "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
+                            "if(!f)f='mp_bots';" +
+                            "f=String(f).trim();" +
+                            "if(f.toLowerCase().indexOf('mods/')===0)f=f.slice(5);" +
+                            "if(!Array.isArray(programArgs))programArgs=[];" +
+                            "for(var i=programArgs.length-2;i>=0;i--){" +
+                            "if(programArgs[i]==='+set'&&programArgs[i+1]==='fs_game')programArgs.splice(i,3);" +
+                            "}" +
+                            "programArgs.push('+set','fs_game',f);" +
+                            "console.log('[kisak] programArgs FORCED',programArgs.slice());" +
+                            "}catch(x){console.warn('[kisak] programArgs force failed',x);}})()";
+                        code = code.replace(needle, inject);
+                        console.log("[kisak] patched programArgs force");
+                    }
+
+                    // 3) Log at run()
+                    code = code.replace(
+                        "async function run(e=programArgs){",
+                        "async function run(e=programArgs){console.log('[kisak] run() args',e);"
+                    );
 
                     const blob = new Blob([code], {
                         type: "text/javascript",
