@@ -21,7 +21,7 @@
         (function() {
             const p = new URLSearchParams(location.search);
             const mp = p.get("mode") === "mp" || p.has("mp") || p.has("joinCode");
-            const js  = mp ? "mp/kisakcod-mp.js"  : "kisakcod-sp.js";
+            const js  = mp ? "mp/kisakcod-mp.js?v=botsfs2"  : "kisakcod-sp.js";
             const wasm = mp ? "mp/kisakcod-mp.wasm" : "kisakcod-sp.wasm";
             const l1 = document.createElement("link");
             l1.rel = "preload"; l1.href = js; l1.as = "script";
@@ -763,7 +763,7 @@
                                   urlParams.has("mp") ||
                                   urlParams.has("joinCode");
 
-        const ENGINE_JS  = isMultiplayerMode ? "mp/kisakcod-mp.js"  : "kisakcod-sp.js";
+        const ENGINE_JS  = isMultiplayerMode ? "mp/kisakcod-mp.js?v=botsfs2"  : "kisakcod-sp.js";
         const ENGINE_WASM = isMultiplayerMode ? "mp/kisakcod-mp.wasm" : "kisakcod-sp.wasm";
 
         if (isMultiplayerMode) {
@@ -4623,7 +4623,11 @@
                     }
                     if (!fs && window.__kisakFsGame) fs = window.__kisakFsGame;
                     if (fs && typeof fs === "string" && fs.trim()) {
-                        const v = fs.trim();
+                        let v = fs.trim();
+                        // Engine wants a subdirectory of mods/, not "mods/name"
+                        if (v.toLowerCase().startsWith("mods/") || v.toLowerCase().startsWith("mods\\")) {
+                            v = v.slice(5).replace(/^\\/, "");
+                        }
                         window.__kisakFsGame = v;
                         try {
                             sessionStorage.setItem("kisak_launch_fs_game", v);
@@ -9729,9 +9733,13 @@
                     fsGame = window.__kisakFsGame;
                 }
                 if (fsGame && String(fsGame).trim()) {
-                    const v = String(fsGame).trim();
+                    let v = String(fsGame).trim();
+                    if (v.toLowerCase().startsWith("mods/") || v.toLowerCase().startsWith("mods\\")) {
+                        v = v.slice(5).replace(/^\\/, "");
+                    }
                     window.__kisakFsGame = v;
                     arr.push("+set", "fs_game", v);
+                    console.log("[kisak] applyLanguageArgs fs_game =", v);
                 }
 
             }
@@ -11409,7 +11417,7 @@
          * Launch multiplayer with +set fs_game mods/mp_bots.
          */
         async function launchRooftops() {
-            const FS_GAME = "mods/mp_bots";
+            const FS_GAME = "mp_bots";
             console.log("[kisak] Launch bots mod clicked");
             status("Launch bots mod: preparing…");
 
