@@ -13879,31 +13879,10 @@
             window.__kisakOpfsReady =
                 installCheckInstalled;
 
-            // Build a fresh <script> every time. The template's own node is
-            // moved into the document on the first injection, so after that
-            // (or after resetGameEngine()) the template no longer holds one
-            // and querySelector("script") returns null.
             const gameScript =
                 document.createElement("script");
 
             gameScript.async = true;
-
-            // In multiplayer mode forward useful query params (joinCode,
-            // bots, etc.) to the engine glue the same way the old
-            // kisakcod-mp.html did.
-            if (isMultiplayerMode) {
-                const srcUrl = new URL(ENGINE_SCRIPT_SRC, location.href);
-                for (const key of ["joinCode", "devmap", "ben", "bench",
-                                   "benchcmd", "benchdelay", "addbots"]) {
-                    const val = urlParams.get(key);
-                    if (val !== null) srcUrl.searchParams.set(key, val);
-                }
-                // Always tell the MP glue the LAN relay URL.
-                srcUrl.searchParams.set("kisakLan", Module.kisakLanUrl || "");
-                gameScript.src = srcUrl.href;
-            } else {
-                gameScript.src = ENGINE_SCRIPT_SRC;
-            }
 
             const appended = new Promise((resolve) => {
                 gameScript.addEventListener(
@@ -13911,16 +13890,92 @@
                     resolve,
                     { once: true }
                 );
-
-                // Never strand the caller if the load event is missed.
                 setTimeout(resolve, 30000);
             });
-
 
             // Patch the wasm import table before the engine instantiates, so
             // the OPFS writers it captures report success correctly.
             installWasmfsResultFix();
 
+            /*
+             * Multiplayer: fetch the glue as text, force kisak_launch_args()
+             * to always emit +set fs_game <mod>, then inject via blob URL.
+             * This bypasses cache and the engine's picky URL validation.
+             */
+            if (isMultiplayerMode) {
+                const srcUrl = new URL(
+                    ENGINE_SCRIPT_SRC.replace(/\?.*$/, ""),
+                    location.href
+                );
+                // Strip query from path for fetch; cache-bust separately
+                const fetchUrl =
+                    srcUrl.pathname +
+                    "?v=botsforce3&t=" +
+                    Date.now();
+
+                let code = null;
+                try {
+                    const resp = await fetch(fetchUrl, { cache: "no-store" });
+                    if (!resp.ok) {
+                        throw new Error("HTTP " + resp.status);
+                    }
+                    code = await resp.text();
+                } catch (err) {
+                    console.warn(
+                        "[kisak] could not fetch MP glue for patch:",
+                        err
+                    );
+                }
+
+                if (code && code.indexOf("function kisak_launch_args") >= 0) {
+                    const forceFn =
+                        "function kisak_launch_args(){" +
+                        "try{" +
+                        "var f=null;" +
+                        "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
+                        "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
+                        "if(!f)f='mp_bots';" +
+                        "f=String(f).trim();" +
+                        "if(f.toLowerCase().indexOf('mods/')===0)f=f.slice(5);" +
+                        "var e=' +set fs_game '+f;" +
+                        "console.log('[kisak] kisak_launch_args FORCED',e);" +
+                        "var N=lengthBytesUTF8(e)+1,U=_malloc(N);" +
+                        "return stringToUTF8(e,U,N),U;" +
+                        "}catch(err){console.error('[kisak] launch_args error',err);return 0;}" +
+                        "}";
+
+                    // Replace the whole function declaration up to kisak_bench_text
+                    const re = /function kisak_launch_args\(\)\{[\s\S]*?\}function kisak_bench_text/;
+                    if (re.test(code)) {
+                        code = code.replace(
+                            re,
+                            forceFn + "function kisak_bench_text"
+                        );
+                        console.log(
+                            "[kisak] patched kisak_launch_args into MP glue"
+                        );
+                    } else {
+                        console.warn(
+                            "[kisak] kisak_launch_args pattern not found in glue"
+                        );
+                    }
+
+                    const blob = new Blob([code], {
+                        type: "text/javascript",
+                    });
+                    gameScript.src = URL.createObjectURL(blob);
+                } else {
+                    // Fallback: normal script tag
+                    const fallback = new URL(
+                        ENGINE_SCRIPT_SRC,
+                        location.href
+                    );
+                    fallback.searchParams.set("kisakLan", Module.kisakLanUrl || "");
+                    gameScript.src = fallback.href;
+                }
+            } else {
+                gameScript.src = ENGINE_SCRIPT_SRC;
+            }
 
             document.body.appendChild(
                 gameScript
