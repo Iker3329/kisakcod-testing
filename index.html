@@ -649,15 +649,19 @@
             <button id="import-maps-button" type="button">
                 Import Custom Maps
             </button>
-
-            <button id="import-rooftops-button" type="button">
-                Import Rooftops Mod
-            </button>
-
+            
             <button id="launch-rooftops-button" type="button">
-                Launch Rooftops
+                Launch bots mod
             </button>
 
+            <button id="controller-defaults-button" type="button">
+                Controller default controls
+            </button>
+
+            <button id="reset-mods-button" type="button" class="danger">
+                Reset mods folder
+            </button>
+            
 
             <input id="upload-save-input" type="file" accept=".dat,.zip" hidden>
 
@@ -747,6 +751,14 @@
            to boot the multiplayer engine instead of the singleplayer one.
            ============================================================ */
         const urlParams = new URLSearchParams(location.search);
+        try {
+            const fsParam = urlParams.get("fs_game");
+            if (fsParam && fsParam.trim()) {
+                sessionStorage.setItem("kisak_launch_fs_game", fsParam.trim());
+                window.__kisakFsGame = fsParam.trim();
+            }
+        } catch (e) { }
+
         const isMultiplayerMode = urlParams.get("mode") === "mp" ||
                                   urlParams.has("mp") ||
                                   urlParams.has("joinCode");
@@ -11381,19 +11393,19 @@
         }
 
         /**
-         * Launch singleplayer with +set fs_game mods/Rooftops1.
+         * Launch multiplayer with +set fs_game mods/mp_bots.
          */
         async function launchRooftops() {
-            const FS_GAME = "mods/Rooftops1";
-            console.log("[kisak] Launch Rooftops clicked");
-            status("Launch Rooftops: preparing…");
+            const FS_GAME = "mods/mp_bots";
+            console.log("[kisak] Launch bots mod clicked");
+            status("Launch bots mod: preparing…");
 
             if (!await hasInstalledGame()) {
                 status("Install the game first.");
                 return;
             }
 
-            // Always persist intent so a reload boots with fs_game.
+            // Persist so the MP boot picks up fs_game.
             try {
                 sessionStorage.setItem("kisak_launch_fs_game", FS_GAME);
                 sessionStorage.setItem("kisak_auto_play", "1");
@@ -11423,21 +11435,15 @@
                 console.warn("[kisak] args mutate failed", e);
             }
 
-            status("Launching Rooftops (fs_game " + FS_GAME + ")…");
-            log("Launch Rooftops with +set fs_game " + FS_GAME);
+            status("Launching bots mod (MP, fs_game " + FS_GAME + ")…");
+            log("Launch bots mod with +set fs_game " + FS_GAME + " (multiplayer)");
 
-            // Multiplayer page → go to SP with same session flags.
-            if (isMultiplayerMode) {
-                const url = new URL(location.href);
-                url.searchParams.delete("mode");
-                location.href = url.toString();
-                return;
-            }
-
-            // Always reload so kisakcod-sp.js reads Module.arguments with
-            // fs_game at glue evaluation time (programArgs is fixed then).
-            console.log("[kisak] reloading for clean Rooftops boot…");
-            location.reload();
+            // Always boot the multiplayer engine with fs_game in the URL.
+            const url = new URL(location.href);
+            url.searchParams.set("mode", "mp");
+            url.searchParams.set("fs_game", FS_GAME);
+            console.log("[kisak] navigating to multiplayer with bots mod…");
+            location.href = url.toString();
         }
 
 
@@ -11468,12 +11474,12 @@
             } catch (e) { }
 
             console.log(
-                "[kisak] auto-play Rooftops with fs_game",
+                "[kisak] auto-play bots mod with fs_game",
                 fs,
                 "args=",
                 getEngineArgsArray() && getEngineArgsArray().slice()
             );
-            status("Auto-starting Rooftops (fs_game " + fs + ")…");
+            status("Auto-starting bots mod (fs_game " + fs + ")…");
 
             // Wait until OPFS ready and play enabled.
             for (let i = 0; i < 80; i++) {
@@ -11505,6 +11511,526 @@
                 launchRooftops();
             });
         }
+
+        /**
+         * Download stock controller-enabled configs from GitHub and install
+         * them into every profile under cod4/players/profiles/<name>/.
+         */
+        async function installControllerDefaultControls() {
+            const BASE =
+                "https://raw.githubusercontent.com/Iker3329/kisakcod/main/assets/";
+            const FILES = ["config.cfg", "config_mp.cfg"];
+
+            if (!await hasInstalledGame()) {
+                status("Install the game first.");
+                return;
+            }
+
+            status("Downloading controller default configs…");
+            log("[controller] fetching configs from " + BASE);
+
+            let texts = {};
+            try {
+                for (const name of FILES) {
+                    const url = BASE + name;
+                    const res = await fetch(url, { cache: "no-cache" });
+                    if (!res.ok) {
+                        throw new Error(name + ": HTTP " + res.status);
+                    }
+                    texts[name] = await res.text();
+                    log("[controller] downloaded " + name + " (" +
+                        texts[name].length + " bytes)");
+                }
+            } catch (err) {
+                status(
+                    "Controller configs download failed: " +
+                    (err?.message || err)
+                );
+                log("ERROR controller download: " + (err?.message || err));
+                return;
+            }
+
+            try {
+                const root = await navigator.storage.getDirectory();
+                const cod4 = await root.getDirectoryHandle("cod4", {
+                    create: false
+                });
+
+                // Ensure players/profiles exists
+                let players;
+                try {
+                    players = await cod4.getDirectoryHandle("players", {
+                        create: true
+                    });
+                } catch (e) {
+                    players = await cod4.getDirectoryHandle("players");
+                }
+                let profiles;
+                try {
+                    profiles = await players.getDirectoryHandle("profiles", {
+                        create: true
+                    });
+                } catch (e) {
+                    profiles = await players.getDirectoryHandle("profiles");
+                }
+
+                // Collect profile folders (directories only)
+                const profileNames = [];
+                for await (const [name, handle] of profiles.entries()) {
+                    if (handle.kind === "directory") {
+                        profileNames.push(name);
+                    }
+                }
+
+                // If none exist, create a default profile
+                if (profileNames.length === 0) {
+                    await profiles.getDirectoryHandle("Player", {
+                        create: true
+                    });
+                    profileNames.push("Player");
+                    log("[controller] created default profile: Player");
+                }
+
+                let written = 0;
+                for (const prof of profileNames) {
+                    const profDir = await profiles.getDirectoryHandle(prof, {
+                        create: true
+                    });
+                    for (const name of FILES) {
+                        const bytes = new TextEncoder().encode(texts[name]);
+                        const fileHandle = await profDir.getFileHandle(
+                            name,
+                            { create: true }
+                        );
+                        const w = await fileHandle.createWritable();
+                        await w.write(bytes);
+                        await w.close();
+                        written += 1;
+                        log(
+                            "[controller] wrote players/profiles/" +
+                            prof + "/" + name
+                        );
+                    }
+                }
+
+                status(
+                    "Controller defaults installed into " +
+                    profileNames.length +
+                    " profile(s) (" +
+                    written +
+                    " file(s)). Restart the game for binds to load."
+                );
+                log(
+                    "[controller] done — profiles: " +
+                    profileNames.join(", ")
+                );
+            } catch (err) {
+                status(
+                    "Controller install failed: " + (err?.message || err)
+                );
+                log("ERROR controller install: " + (err?.message || err));
+            }
+        }
+
+        const controllerDefaultsButton =
+            document.getElementById("controller-defaults-button");
+        if (controllerDefaultsButton) {
+            controllerDefaultsButton.addEventListener("click", () => {
+                installControllerDefaultControls();
+            });
+        }
+
+        /**
+         * Download vanilla iwm0 mpdata (max rank / unlock stats) from GitHub
+         * and write it into every profile under cod4/players/profiles/.
+         */
+        async function installUnlockMpdata() {
+            const URL =
+                "https://raw.githubusercontent.com/Iker3329/kisakcod/main/assets/mpdata";
+
+            if (!await hasInstalledGame()) {
+                status("Install the game first.");
+                return;
+            }
+
+            status("Downloading mpdata…");
+            log("[mpdata] fetching " + URL);
+
+            let bytes;
+            try {
+                const res = await fetch(URL, { cache: "no-cache" });
+                if (!res.ok) {
+                    throw new Error("HTTP " + res.status);
+                }
+                const buf = await res.arrayBuffer();
+                bytes = new Uint8Array(buf);
+                if (bytes.byteLength < 8) {
+                    throw new Error("file too small (" + bytes.byteLength + ")");
+                }
+                const magic = String.fromCharCode(
+                    bytes[0], bytes[1], bytes[2], bytes[3]
+                );
+                log(
+                    "[mpdata] downloaded " + bytes.byteLength +
+                    " bytes, magic=" + magic
+                );
+                if (magic !== "iwm0" && magic !== "ice0") {
+                    status(
+                        "Warning: unexpected mpdata magic \"" + magic +
+                        "\" — installing anyway."
+                    );
+                }
+            } catch (err) {
+                status("mpdata download failed: " + (err?.message || err));
+                log("ERROR mpdata download: " + (err?.message || err));
+                return;
+            }
+
+            async function writeMpdata(dirHandle, relLog) {
+                const fileHandle = await dirHandle.getFileHandle("mpdata", {
+                    create: true
+                });
+                const w = await fileHandle.createWritable();
+                await w.write(bytes);
+                await w.close();
+                log("[mpdata] wrote " + relLog);
+            }
+
+            try {
+                const root = await navigator.storage.getDirectory();
+                const cod4 = await root.getDirectoryHandle("cod4", {
+                    create: false
+                });
+
+                let players;
+                try {
+                    players = await cod4.getDirectoryHandle("players", {
+                        create: true
+                    });
+                } catch (e) {
+                    players = await cod4.getDirectoryHandle("players");
+                }
+                let profiles;
+                try {
+                    profiles = await players.getDirectoryHandle("profiles", {
+                        create: true
+                    });
+                } catch (e) {
+                    profiles = await players.getDirectoryHandle("profiles");
+                }
+
+                const profileNames = [];
+                for await (const [name, handle] of profiles.entries()) {
+                    if (handle.kind === "directory") {
+                        profileNames.push(name);
+                    }
+                }
+
+                if (profileNames.length === 0) {
+                    await profiles.getDirectoryHandle("Player", {
+                        create: true
+                    });
+                    profileNames.push("Player");
+                    log("[mpdata] created default profile: Player");
+                }
+
+                let written = 0;
+                for (const prof of profileNames) {
+                    const profDir = await profiles.getDirectoryHandle(prof, {
+                        create: true
+                    });
+
+                    // 1) Default path: profiles/<name>/mpdata
+                    await writeMpdata(
+                        profDir,
+                        "players/profiles/" + prof + "/mpdata"
+                    );
+                    written += 1;
+
+                    // 2) When fs_game is set (e.g. mods/mp_bots), engine reads
+                    //    profiles/<name>/<fs_game>/mpdata — write common cases.
+                    let modsDir = null;
+                    try {
+                        modsDir = await profDir.getDirectoryHandle("mods", {
+                            create: true
+                        });
+                    } catch (e) { }
+
+                    if (modsDir) {
+                        // Always ensure mp_bots slot
+                        const bots = await modsDir.getDirectoryHandle(
+                            "mp_bots",
+                            { create: true }
+                        );
+                        await writeMpdata(
+                            bots,
+                            "players/profiles/" + prof +
+                            "/mods/mp_bots/mpdata"
+                        );
+                        written += 1;
+
+                        // Any other existing mod folders under profile/mods
+                        for await (const [modName, modHandle] of modsDir.entries()) {
+                            if (
+                                modHandle.kind === "directory" &&
+                                modName !== "mp_bots"
+                            ) {
+                                await writeMpdata(
+                                    modHandle,
+                                    "players/profiles/" + prof +
+                                    "/mods/" + modName + "/mpdata"
+                                );
+                                written += 1;
+                            }
+                        }
+                    }
+                }
+
+                status(
+                    "mpdata installed (" + written +
+                    " file(s) across " + profileNames.length +
+                    " profile(s)). Fully restart multiplayer (reload page)."
+                );
+                log(
+                    "[mpdata] done — profiles: " + profileNames.join(", ")
+                );
+            } catch (err) {
+                status("mpdata install failed: " + (err?.message || err));
+                log("ERROR mpdata install: " + (err?.message || err));
+            }
+        }
+
+        const installMpdataButton =
+            document.getElementById("install-mpdata-button");
+        if (installMpdataButton) {
+            installMpdataButton.addEventListener("click", () => {
+                installUnlockMpdata();
+            });
+        }
+
+        /**
+         * Install unlock-all mod: rankTable.csv with every stock unlock
+         * moved to rank 0. Written to cod4/mods/unlockall/mp/
+         */
+        async function installUnlockAllMod() {
+            const CSV_URL =
+                "https://raw.githubusercontent.com/Iker3329/kisakcod/main/assets/rankTable.csv";
+            const IWD_URL =
+                "https://raw.githubusercontent.com/Iker3329/kisakcod/main/assets/unlockall.iwd";
+
+            if (!await hasInstalledGame()) {
+                status("Install the game first.");
+                return;
+            }
+
+            status("Downloading unlock-all mod…");
+            log("[unlockall] fetching rankTable + iwd");
+
+            let csvText;
+            let iwdBytes = null;
+            try {
+                const res = await fetch(CSV_URL, { cache: "no-cache" });
+                if (!res.ok) throw new Error("rankTable HTTP " + res.status);
+                csvText = await res.text();
+                if (csvText.length < 100) {
+                    throw new Error("rankTable.csv too small");
+                }
+                log("[unlockall] rankTable.csv " + csvText.length + " chars");
+            } catch (err) {
+                status("unlock-all download failed: " + (err?.message || err));
+                log("ERROR unlockall: " + (err?.message || err));
+                return;
+            }
+
+            try {
+                const res = await fetch(IWD_URL, { cache: "no-cache" });
+                if (res.ok) {
+                    iwdBytes = new Uint8Array(await res.arrayBuffer());
+                    log("[unlockall] unlockall.iwd " + iwdBytes.byteLength + " bytes");
+                } else {
+                    log("[unlockall] unlockall.iwd not on GitHub yet (" + res.status + ")");
+                }
+            } catch (e) {
+                log("[unlockall] iwd fetch skipped: " + (e?.message || e));
+            }
+
+            const csvBytes = new TextEncoder().encode(csvText);
+
+            async function writeModTree(cod4, modName) {
+                const base = "mods/" + modName;
+                await ensureOPFSDirectory(cod4, base + "/mp");
+                await writeBytesToOPFS(
+                    cod4,
+                    base + "/mp/rankTable.csv",
+                    csvBytes
+                );
+                log("[unlockall] wrote " + base + "/mp/rankTable.csv");
+                if (iwdBytes) {
+                    await writeBytesToOPFS(
+                        cod4,
+                        base + "/unlockall.iwd",
+                        iwdBytes
+                    );
+                    // Also as named iwd some loaders expect
+                    await writeBytesToOPFS(
+                        cod4,
+                        base + "/mod.iwd",
+                        iwdBytes
+                    );
+                    log("[unlockall] wrote " + base + "/*.iwd");
+                }
+            }
+
+            try {
+                const root = await navigator.storage.getDirectory();
+                const cod4 = await root.getDirectoryHandle("cod4", {
+                    create: false
+                });
+
+                // Standalone mod
+                await writeModTree(cod4, "unlockall");
+                // Merge into bots mod so fs_game mods/mp_bots still gets unlocks
+                await writeModTree(cod4, "mp_bots");
+
+                status(
+                    "Unlock-all installed into mods/unlockall and mods/mp_bots. " +
+                    "Use Launch unlock-all MP, or set fs_game to mods/unlockall or mods/mp_bots."
+                );
+            } catch (err) {
+                status("unlock-all install failed: " + (err?.message || err));
+                log("ERROR unlockall install: " + (err?.message || err));
+            }
+        }
+
+        async function launchUnlockAllMP() {
+            // Prefer unlockall; bots users can use mp_bots after install merges CSV there
+            try {
+                sessionStorage.setItem("kisak_launch_fs_game", "mods/unlockall");
+                sessionStorage.setItem("kisak_auto_play", "1");
+            } catch (e) { }
+            window.__kisakFsGame = "mods/unlockall";
+            window.__kisakFsGameKeep = true;
+
+            const url = new URL(location.href);
+            url.searchParams.set("mode", "mp");
+            // engine may read fs_game from query on some builds
+            url.searchParams.set("fs_game", "mods/unlockall");
+            status("Launching multiplayer with fs_game mods/unlockall…");
+            location.href = url.toString();
+        }
+
+        const installUnlockAllModButton =
+            document.getElementById("install-unlockall-mod-button");
+        if (installUnlockAllModButton) {
+            installUnlockAllModButton.addEventListener("click", () => {
+                installUnlockAllMod();
+            });
+        }
+
+        const launchUnlockAllMpButton =
+            document.getElementById("launch-unlockall-mp-button");
+        if (launchUnlockAllMpButton) {
+            launchUnlockAllMpButton.addEventListener("click", () => {
+                launchUnlockAllMP();
+            });
+        }
+
+
+
+        /**
+         * Delete cod4/mods and cod4/Mods (case variants) and clear the
+         * bots-mod install flag so multiplayer re-downloads mp_bots.
+         */
+        async function resetModsFolder() {
+            if (!await hasInstalledGame()) {
+                status("Install the game first.");
+                return;
+            }
+
+            const ok = window.confirm(
+                "Delete the mods folder (mods and Mods) from browser storage?\n\n" +
+                "Custom mods you imported will be removed. " +
+                "The bots mod will re-download the next time you start multiplayer."
+            );
+            if (!ok) return;
+
+            status("Removing mods folders…");
+            log("[mods] reset: removing cod4/mods and cod4/Mods");
+
+            let removed = [];
+            let failed = [];
+
+            try {
+                const root = await navigator.storage.getDirectory();
+                const cod4 = await root.getDirectoryHandle("cod4", {
+                    create: false
+                });
+
+                for (const name of ["mods", "Mods"]) {
+                    try {
+                        await cod4.removeEntry(name, { recursive: true });
+                        removed.push(name);
+                        log("[mods] removed cod4/" + name);
+                    } catch (err) {
+                        // NotFoundError = already gone — fine
+                        if (err && err.name === "NotFoundError") {
+                            log("[mods] cod4/" + name + " not present");
+                        } else {
+                            failed.push(name + ": " + (err?.message || err));
+                            log(
+                                "[mods] failed to remove " + name + ": " +
+                                (err?.message || err)
+                            );
+                        }
+                    }
+                }
+
+                // Force bots mod re-download on next MP boot
+                try {
+                    localStorage.removeItem("kisak_mods_installed");
+                    log("[mods] cleared localStorage kisak_mods_installed");
+                } catch (e) { }
+
+                try {
+                    delete window.__kisakModsReady;
+                } catch (e) {
+                    window.__kisakModsReady = false;
+                }
+
+                if (failed.length) {
+                    status(
+                        "Mods reset partial: removed [" +
+                        removed.join(", ") +
+                        "]; errors: " +
+                        failed.join("; ")
+                    );
+                } else if (removed.length) {
+                    status(
+                        "Removed: " +
+                        removed.map(n => "cod4/" + n).join(", ") +
+                        ". Start multiplayer to re-download the bots mod."
+                    );
+                } else {
+                    status(
+                        "No mods folder found. Cleared install flag — " +
+                        "start multiplayer to download the bots mod."
+                    );
+                }
+            } catch (err) {
+                status("Reset mods failed: " + (err?.message || err));
+                log("ERROR reset mods: " + (err?.message || err));
+            }
+        }
+
+        const resetModsButton =
+            document.getElementById("reset-mods-button");
+        if (resetModsButton) {
+            resetModsButton.addEventListener("click", () => {
+                resetModsFolder();
+            });
+        }
+
+
 
         // After Launch Rooftops reload, auto-start Play with fs_game.
         maybeAutoPlayRooftops();
