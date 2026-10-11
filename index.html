@@ -4609,14 +4609,27 @@
                         "+set", "sv_pure", "0"
                     );
                 }
-                // fs_game for Rooftops (and similar). Kept in sessionStorage
-                // so applyLanguageArgs() can re-apply after it clears the array.
+                // fs_game (bots mod / rooftops / etc). Prefer URL, then
+                // sessionStorage, so a fresh MP boot always sees the mod.
                 try {
-                    let fs = sessionStorage.getItem("kisak_launch_fs_game");
+                    let fs = null;
+                    try {
+                        fs = new URLSearchParams(location.search).get("fs_game");
+                    } catch (e) { }
+                    if (!fs) {
+                        try {
+                            fs = sessionStorage.getItem("kisak_launch_fs_game");
+                        } catch (e) { }
+                    }
                     if (!fs && window.__kisakFsGame) fs = window.__kisakFsGame;
                     if (fs && typeof fs === "string" && fs.trim()) {
-                        window.__kisakFsGame = fs.trim();
-                        args.push("+set", "fs_game", fs.trim());
+                        const v = fs.trim();
+                        window.__kisakFsGame = v;
+                        try {
+                            sessionStorage.setItem("kisak_launch_fs_game", v);
+                        } catch (e) { }
+                        args.push("+set", "fs_game", v);
+                        console.log("[kisak] Module.arguments fs_game =", v);
                     }
                 } catch (e) { }
                 return args;
@@ -11438,12 +11451,16 @@
             status("Launching bots mod (MP, fs_game " + FS_GAME + ")…");
             log("Launch bots mod with +set fs_game " + FS_GAME + " (multiplayer)");
 
-            // Always boot the multiplayer engine with fs_game in the URL.
-            const url = new URL(location.href);
-            url.searchParams.set("mode", "mp");
-            url.searchParams.set("fs_game", FS_GAME);
-            console.log("[kisak] navigating to multiplayer with bots mod…");
-            location.href = url.toString();
+            // Boot multiplayer with fs_game. Build the query by hand so the
+            // path stays "mods/mp_bots" (not percent-encoded in the bar),
+            // and keep sessionStorage as the source of truth for the engine.
+            const base = location.pathname + location.hash;
+            const target =
+                location.pathname +
+                "?mode=mp&fs_game=" + encodeURIComponent(FS_GAME).replace(/%2F/gi, "/") +
+                (location.hash || "");
+            console.log("[kisak] navigating to", target, "fs_game=", FS_GAME);
+            location.href = target;
         }
 
 
@@ -11472,6 +11489,26 @@
                     arr.push("+set", "fs_game", fs);
                 }
             } catch (e) { }
+
+            // Force fs_game onto Module.arguments before the engine can boot
+            // without it (programArgs is fixed at glue evaluation).
+            try {
+                if (typeof Module !== "undefined" && Module) {
+                    if (!Array.isArray(Module.arguments)) {
+                        Module.arguments = [];
+                    }
+                    const arr = Module.arguments;
+                    for (let i = arr.length - 2; i >= 0; i--) {
+                        if (arr[i] === "+set" && arr[i + 1] === "fs_game") {
+                            arr.splice(i, 3);
+                        }
+                    }
+                    arr.push("+set", "fs_game", fs);
+                    console.log("[kisak] forced Module.arguments", arr.slice());
+                }
+            } catch (e) {
+                console.warn("[kisak] could not force Module.arguments", e);
+            }
 
             console.log(
                 "[kisak] auto-play bots mod with fs_game",
