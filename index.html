@@ -13935,11 +13935,13 @@
                         "var f=null;" +
                         "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
                         "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
-                        "if(!f)f='mods/mp_bots';" +
+                        "var e='';" +
+                        "if(f&&String(f).trim()){" +
                         "f=String(f).trim();" +
                         "if(f.toLowerCase().indexOf('mods/')!==0)f='mods/'+f;" +
-                        "var e=' +set fs_game '+f;" +
+                        "e=' +set fs_game '+f;" +
                         "console.log('[kisak] kisak_launch_args FORCED',e);" +
+                        "}" +
                         "var N=lengthBytesUTF8(e)+1,U=_malloc(N);" +
                         "return stringToUTF8(e,U,N),U;" +
                         "}catch(err){console.error('[kisak] launch_args error',err);return 0;}" +
@@ -13969,16 +13971,18 @@
                             "var f=null;" +
                             "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
                             "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
-                            "if(!f)f='mods/mp_bots';" +
-                            "f=String(f).trim();" +
-                            "if(f.toLowerCase().indexOf('mods/')!==0)f='mods/'+f;" +
                             "if(!Array.isArray(programArgs))programArgs=[];" +
                             "for(var i=programArgs.length-2;i>=0;i--){" +
                             "if(programArgs[i]==='+set'&&programArgs[i+1]==='fs_game')programArgs.splice(i,3);" +
                             "}" +
+                            "if(f&&String(f).trim()){" +
+                            "f=String(f).trim();" +
+                            "if(f.toLowerCase().indexOf('mods/')!==0)f='mods/'+f;" +
                             "programArgs.push('+set','fs_game',f);" +
                             "console.log('[kisak] programArgs FORCED',programArgs.slice());" +
+                            "}" +
                             "}catch(x){console.warn('[kisak] programArgs force failed',x);}})()";
+
                         code = code.replace(needle, inject);
                         console.log("[kisak] patched programArgs force");
                     }
@@ -14163,14 +14167,20 @@
 
                 }
 
-                // Stay on the single HTML: just switch to multiplayer mode.
-                // A full navigation is required because the two Emscripten
-                // glues declare top-level classes and cannot both live in
-                // (or be swapped inside) the same document.
+                // Clear bots-mod launch flags so normal MP is vanilla.
+                try {
+                    sessionStorage.removeItem("kisak_launch_fs_game");
+                    sessionStorage.removeItem("kisak_auto_play");
+                } catch (e) { }
+                try { delete window.__kisakFsGame; } catch (e) {
+                    window.__kisakFsGame = null;
+                }
+                window.__kisakFsGameKeep = false;
+
                 const url = new URL(location.href);
                 url.searchParams.set("mode", "mp");
-                // Drop any previous joinCode so we start a fresh local session
-                // unless the user already had one in the URL.
+                url.searchParams.delete("fs_game");
+                url.searchParams.delete("joinCode");
                 location.href = url.toString();
 
             });
