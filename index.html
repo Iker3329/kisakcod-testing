@@ -13942,37 +13942,46 @@
                 }
 
                 if (code && code.indexOf("function kisak_launch_args") >= 0) {
-                    // Prefix-inject at the START of kisak_launch_args so we
-                    // always return fs_game when sessionStorage/URL asks for
-                    // it (full function replace was fragile).
-                    const earlyReturn =
+                    // Full replace of kisak_launch_args — this is what produced
+                    // the FORCED log when the mod actually loaded.
+                    const forceFn =
                         "function kisak_launch_args(){" +
+                        "console.log('[kisak] kisak_launch_args CALLED');" +
                         "try{" +
-                        "var __f=null;" +
-                        "try{__f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
-                        "if(!__f){try{__f=(self.location&&self.location.search)?new URLSearchParams(self.location.search).get('fs_game'):null}catch(x){}}" +
-                        "if(!__f){try{__f=Module&&Module.__kisakFsGame}catch(x){}}" +
-                        "if(__f&&String(__f).trim()){" +
-                        "__f=String(__f).trim();" +
-                        "if(__f.toLowerCase().indexOf('mods/')!==0)__f='mods/'+__f;" +
-                        "var __e=' +set fs_game '+__f;" +
-                        "console.log('[kisak] kisak_launch_args FORCED',__e);" +
-                        "var __N=lengthBytesUTF8(__e)+1,__U=_malloc(__N);" +
-                        "return stringToUTF8(__e,__U,__N),__U;" +
+                        "var f=null;" +
+                        "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
+                        "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
+                        "console.log('[kisak] kisak_launch_args f=',f);" +
+                        "var e='';" +
+                        "if(f&&String(f).trim()){" +
+                        "f=String(f).trim();" +
+                        "if(f.toLowerCase().indexOf('mods/')!==0)f='mods/'+f;" +
+                        "e=' +set fs_game '+f;" +
+                        "console.log('[kisak] kisak_launch_args FORCED',e);" +
                         "}" +
-                        "}catch(__err){console.warn('[kisak] launch_args early',__err)}" +
-                        // fall through into original body (opening brace already consumed)
-                        "";
+                        "var N=lengthBytesUTF8(e)+1,U=_malloc(N);" +
+                        "return stringToUTF8(e,U,N),U;" +
+                        "}catch(err){console.error('[kisak] launch_args error',err);"+
+                        "try{var N2=lengthBytesUTF8('')+1,U2=_malloc(N2);return stringToUTF8('',U2,N2),U2;}catch(e2){return 0;}}" +
+                        "}";
 
-                    const fnSig = "function kisak_launch_args(){";
-                    if (code.indexOf(fnSig) >= 0) {
-                        code = code.replace(fnSig, earlyReturn);
+                    // Non-greedy can stop early; match until kisak_bench_text
+                    const re = /function kisak_launch_args\(\)\{[\s\S]*?\}function kisak_bench_text/;
+                    if (re.test(code)) {
+                        code = code.replace(re, forceFn + "function kisak_bench_text");
                         console.log("[kisak] patched kisak_launch_args into MP glue");
                     } else {
-                        console.warn("[kisak] kisak_launch_args signature not found");
+                        // Fallback: prefix inject
+                        const sig = "function kisak_launch_args(){";
+                        if (code.indexOf(sig) >= 0) {
+                            code = code.replace(sig, forceFn.slice(0, -1) + ";return 0;}function __kisak_launch_args_unused(){");
+                            console.log("[kisak] patched kisak_launch_args (fallback prefix)");
+                        } else {
+                            console.warn("[kisak] kisak_launch_args not found in glue");
+                        }
                     }
 
-                    // Force programArgs: put fs_game FIRST (before other +sets)
+                    // programArgs: fs_game first
                     const needle = "Module.arguments&&(programArgs=Module.arguments)";
                     if (code.indexOf(needle) >= 0) {
                         const inject =
@@ -13981,7 +13990,6 @@
                             "var f=null;" +
                             "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
                             "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
-                            "if(!f){try{f=Module&&Module.__kisakFsGame}catch(x){}}" +
                             "if(!Array.isArray(programArgs))programArgs=[];" +
                             "for(var i=programArgs.length-2;i>=0;i--){" +
                             "if(programArgs[i]==='+set'&&programArgs[i+1]==='fs_game')programArgs.splice(i,3);" +
