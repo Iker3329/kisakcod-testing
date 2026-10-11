@@ -11459,15 +11459,27 @@
             status("Launching bots mod (MP, fs_game " + FS_GAME + ")…");
             log("Launch bots mod with +set fs_game " + FS_GAME + " (multiplayer)");
 
-            // Boot multiplayer with fs_game. Build the query by hand so the
-            // path stays "mods/mp_bots" (not percent-encoded in the bar),
-            // and keep sessionStorage as the source of truth for the engine.
-            const base = location.pathname + location.hash;
+            // Always force a real navigation/reload so the MP engine boots
+            // with a fresh programArgs / kisak_launch_args (same URL alone
+            // would not reload if we are already on mode=mp).
+            const fsQ =
+                encodeURIComponent(FS_GAME).replace(/%2F/gi, "/");
             const target =
                 location.pathname +
-                "?mode=mp&fs_game=" + encodeURIComponent(FS_GAME).replace(/%2F/gi, "/") +
+                "?mode=mp&fs_game=" + fsQ +
+                "&bots=1&t=" + Date.now() +
                 (location.hash || "");
             console.log("[kisak] navigating to", target, "fs_game=", FS_GAME);
+
+            if (
+                isMultiplayerMode &&
+                location.pathname === new URL(target, location.href).pathname
+            ) {
+                // Already on this page: assign then reload to guarantee boot.
+                history.replaceState(null, "", target);
+                location.reload();
+                return;
+            }
             location.href = target;
         }
 
