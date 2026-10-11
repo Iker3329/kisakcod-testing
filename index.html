@@ -756,6 +756,7 @@
             if (fsParam && fsParam.trim()) {
                 sessionStorage.setItem("kisak_launch_fs_game", fsParam.trim());
                 window.__kisakFsGame = fsParam.trim();
+                try { window.__kisakFsGameKeep = true; } catch (e2) { }
             }
         } catch (e) { }
 
@@ -4632,7 +4633,8 @@
                         try {
                             sessionStorage.setItem("kisak_launch_fs_game", v);
                         } catch (e) { }
-                        args.push("+set", "fs_game", v);
+                        args.unshift("+set", "fs_game", v);
+                        try { Module.__kisakFsGame = v; } catch (e) { }
                         console.log("[kisak] Module.arguments fs_game =", v);
                     }
                 } catch (e) { }
@@ -13940,41 +13942,37 @@
                 }
 
                 if (code && code.indexOf("function kisak_launch_args") >= 0) {
-                    // 1) Force kisak_launch_args
-                    const forceFn =
+                    // Prefix-inject at the START of kisak_launch_args so we
+                    // always return fs_game when sessionStorage/URL asks for
+                    // it (full function replace was fragile).
+                    const earlyReturn =
                         "function kisak_launch_args(){" +
                         "try{" +
-                        "var f=null;" +
-                        "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
-                        "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
-                        "var e='';" +
-                        "if(f&&String(f).trim()){" +
-                        "f=String(f).trim();" +
-                        "if(f.toLowerCase().indexOf('mods/')!==0)f='mods/'+f;" +
-                        "e=' +set fs_game '+f;" +
-                        "console.log('[kisak] kisak_launch_args FORCED',e);" +
+                        "var __f=null;" +
+                        "try{__f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
+                        "if(!__f){try{__f=(self.location&&self.location.search)?new URLSearchParams(self.location.search).get('fs_game'):null}catch(x){}}" +
+                        "if(!__f){try{__f=Module&&Module.__kisakFsGame}catch(x){}}" +
+                        "if(__f&&String(__f).trim()){" +
+                        "__f=String(__f).trim();" +
+                        "if(__f.toLowerCase().indexOf('mods/')!==0)__f='mods/'+__f;" +
+                        "var __e=' +set fs_game '+__f;" +
+                        "console.log('[kisak] kisak_launch_args FORCED',__e);" +
+                        "var __N=lengthBytesUTF8(__e)+1,__U=_malloc(__N);" +
+                        "return stringToUTF8(__e,__U,__N),__U;" +
                         "}" +
-                        "var N=lengthBytesUTF8(e)+1,U=_malloc(N);" +
-                        "return stringToUTF8(e,U,N),U;" +
-                        "}catch(err){console.error('[kisak] launch_args error',err);return 0;}" +
-                        "}";
+                        "}catch(__err){console.warn('[kisak] launch_args early',__err)}" +
+                        // fall through into original body (opening brace already consumed)
+                        "";
 
-                    const re = /function kisak_launch_args\(\)\{[\s\S]*?\}function kisak_bench_text/;
-                    if (re.test(code)) {
-                        code = code.replace(
-                            re,
-                            forceFn + "function kisak_bench_text"
-                        );
-                        console.log(
-                            "[kisak] patched kisak_launch_args into MP glue"
-                        );
+                    const fnSig = "function kisak_launch_args(){";
+                    if (code.indexOf(fnSig) >= 0) {
+                        code = code.replace(fnSig, earlyReturn);
+                        console.log("[kisak] patched kisak_launch_args into MP glue");
                     } else {
-                        console.warn(
-                            "[kisak] kisak_launch_args pattern not found in glue"
-                        );
+                        console.warn("[kisak] kisak_launch_args signature not found");
                     }
 
-                    // 2) After programArgs is assigned from Module.arguments, force fs_game
+                    // Force programArgs: put fs_game FIRST (before other +sets)
                     const needle = "Module.arguments&&(programArgs=Module.arguments)";
                     if (code.indexOf(needle) >= 0) {
                         const inject =
@@ -13983,6 +13981,7 @@
                             "var f=null;" +
                             "try{f=sessionStorage.getItem('kisak_launch_fs_game')}catch(x){}" +
                             "if(!f){try{f=new URLSearchParams(location.search).get('fs_game')}catch(x){}}" +
+                            "if(!f){try{f=Module&&Module.__kisakFsGame}catch(x){}}" +
                             "if(!Array.isArray(programArgs))programArgs=[];" +
                             "for(var i=programArgs.length-2;i>=0;i--){" +
                             "if(programArgs[i]==='+set'&&programArgs[i+1]==='fs_game')programArgs.splice(i,3);" +
@@ -13990,16 +13989,14 @@
                             "if(f&&String(f).trim()){" +
                             "f=String(f).trim();" +
                             "if(f.toLowerCase().indexOf('mods/')!==0)f='mods/'+f;" +
-                            "programArgs.push('+set','fs_game',f);" +
+                            "programArgs.unshift('+set','fs_game',f);" +
                             "console.log('[kisak] programArgs FORCED',programArgs.slice());" +
                             "}" +
                             "}catch(x){console.warn('[kisak] programArgs force failed',x);}})()";
-
                         code = code.replace(needle, inject);
                         console.log("[kisak] patched programArgs force");
                     }
 
-                    // 3) Log at run()
                     code = code.replace(
                         "async function run(e=programArgs){",
                         "async function run(e=programArgs){console.log('[kisak] run() args',e);"
